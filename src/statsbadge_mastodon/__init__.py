@@ -15,6 +15,7 @@ long ago, and a word about why - which is the same shape a headline or an RSS en
 none of this is Mastodon-specific by the time it reaches the badge.
 """
 
+import base64
 import datetime
 import html
 import json
@@ -25,6 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from statsbadge import imaging
 from statsbadge.sources.base import Source
 
 # How often the instance is asked, unless the setting says otherwise. A timeline is not a
@@ -52,6 +54,16 @@ HISTORY_POINTS = 48
 HISTORY_MS = int(HISTORY_EVERY * 1000)
 COUNTS = "counts"
 WHO = "who"
+
+# Which preset a setting asks for. Landscape either way: the page puts a picture down the
+# left of the words, and a tall one beside two lines of text is a column of nothing.
+PRESETS = {"small": "low", "large": "high"}
+# The kinds of attachment worth fetching. A video's thumbnail is `preview_url` too, but a
+# still of a video says less than the words do.
+IMAGE_TYPES = ("image",)
+# How many decoded pictures to remember, keyed by the post they came from: the same four
+# posts are refetched every couple of minutes and nothing about them changed.
+IMAGE_CACHE = 12
 
 # What each sort of notification is, in words, for one with no post attached to say instead.
 NOTIFICATIONS = {
@@ -95,6 +107,10 @@ class Mastodon(Source):
          "default": int(DEFAULT_EVERY),
          "hint": "Seconds. A timeline is not a sensor, and the default is a fortieth of "
                  "what the API allows"},
+        {"key": "images", "label": "Pictures", "type": "choice",
+         "options": ["off", "small", "large"], "default": "small",
+         "hint": "One picture per post, cropped to what is in it and drawn in the theme's "
+                 "own greys. Needs statsbadge[images]"},
     )
 
     @classmethod
@@ -106,6 +122,7 @@ class Mastodon(Source):
         # What the fetcher last brought back, and the hourly counter rings. Both are replaced
         # on the fetcher's thread and read while sampling, so both go through the lock.
         self._readings = {}
+        self._images = {}
         self._counts = {}
         self._counts_at = None
         self._lock = threading.Lock()
@@ -157,6 +174,10 @@ class Mastodon(Source):
         except (TypeError, ValueError):
             every = DEFAULT_EVERY
         self.every = max(MIN_EVERY, min(MAX_EVERY, every))
+        wanted = str(self.config.get("images") or "small")
+        # Off where the extra is not installed, rather than a fault on every fetch: a host
+        # with no decoder should show the words and say nothing about it.
+        self.preset = PRESETS.get(wanted) if imaging.available() else None
         # One group, and slow: a timeline fetched every two minutes has no business in a
         # frame the badge collects every second.
         self.groups = {GROUP: {"label": "Mastodon", "slow": True, "fields": dict(FIELDS)}}
@@ -241,12 +262,16 @@ class Mastodon(Source):
                              "name": me.get("display_name") or me.get("username")})
 
         home = self._get("/timelines/home?limit=1")
-        readings["home"] = _post_item(home[0]) if home else None
+        readings["home"] = self._with_picture(_post_item(home[0]), home[0]) if home else None
 
         notes = self._get(f"/notifications?limit={NOTIFICATION_SCAN}")
-        readings["notification"] = _notification_item(notes[0]) if notes else None
+        readings["notification"] = (
+            self._with_picture(_notification_item(notes[0]), notes[0].get("status"))
+            if notes else None)
         mention = next((n for n in notes if n.get("type") == "mention"), None)
-        readings["mention"] = _notification_item(mention) if mention else None
+        readings["mention"] = (
+            self._with_picture(_notification_item(mention), mention.get("status"))
+            if mention else None)
 
         unread = self._get("/notifications/unread_count")
         readings["unread"] = (unread or {}).get("count")
@@ -254,10 +279,50 @@ class Mastodon(Source):
         mine = self._get(f"/accounts/{me['id']}/statuses"
                          "?limit=1&exclude_replies=true&exclude_reblogs=true")
         if mine:
-            readings["mine"] = _post_item(mine[0])
+            readings["mine"] = self._with_picture(_post_item(mine[0]), mine[0])
             readings["likes"] = mine[0].get("favourites_count")
             readings["boosts"] = mine[0].get("reblogs_count")
         return readings
+
+    def _with_picture(self, item, status):
+        """`item` with one picture on it, where the post has one and the setting wants it.
+
+        One per post: a page has room for one, and the first attachment is the one the
+        author led with. A picture that will not fetch or will not decode is left off - the
+        words are the post, and a message with no picture is a smaller message rather than
+        a failure worth reporting.
+        """
+        if item is None or not self.preset or not status:
+            return item
+        inner = status.get("reblog") or status
+        media = next((m for m in (inner.get("media_attachments") or ())
+                      if m.get("type") in IMAGE_TYPES and (m.get("preview_url")
+                                                           or m.get("url"))), None)
+        if media is None:
+            return item
+        # Keyed on the preset too, so changing the setting is not a page of the old size
+        # until every post happens to change.
+        key = f"{self.preset}:{media.get('id') or media.get('url')}"
+        if key not in self._images:
+            # The preview is a few hundred pixels where the original can be several
+            # thousand, and nothing here wants more than 128 of them.
+            url = media.get("preview_url") or media.get("url")
+            made = None
+            try:
+                with urllib.request.urlopen(url, timeout=15) as response:
+                    raw = response.read()
+                made = base64.b64encode(
+                    imaging.thumbnail(raw, self.preset, "landscape")).decode("ascii")
+            except Exception:
+                made = None
+            if len(self._images) >= IMAGE_CACHE:
+                self._images.clear()
+            self._images[key] = made
+        picture = self._images.get(key)
+        if picture:
+            item = dict(item)
+            item["image"] = picture
+        return item
 
     def _keep_counts(self, readings):
         """Append this hour's counters to their rings, if an hour has gone by.

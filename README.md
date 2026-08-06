@@ -27,6 +27,23 @@ Paste that and your instance's host - `fosstodon.org`, no `https://` - into the 
 | Instance | The host your account is on |
 | Access token | The token above |
 | Ask every | Seconds between refreshes. 120 by default |
+| Pictures | `off`, `small` or `large` - see below |
+
+## Pictures
+
+One picture per post, where the post has one: the first attachment, cropped to what is actually in it and drawn in the theme's own greys.
+
+Needs the images extra, which brings in Pillow to do the decoding:
+
+```bash
+statsbadge ext add "statsbadge[images]"
+```
+
+Without it the setting has no effect and posts show their words, which is most of a post anyway.
+
+`small` is 64x48 in four shades and adds about 950 bytes to a message; `large` is 128x96 in eight and adds about 4KB. Those only travel when the post changes, so a page of four messages costs that once rather than every second - but four large pictures is 16KB in one go, and `small` is the one to leave it on.
+
+What is sent is a position on a ramp rather than a colour, and the badge draws it in whichever theme it is on. Change the theme and the picture changes with it.
 
 ## What it reports
 
