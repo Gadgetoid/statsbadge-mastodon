@@ -113,8 +113,7 @@ class Mastodon(Source):
          "min": int(MIN_EVERY), "max": int(MAX_EVERY), "step": 30},
         {"key": "images", "label": "Pictures", "type": "choice",
          "options": ["off", "small", "large"], "default": "small",
-         "hint": "One picture per post, cropped and drawn in the theme's palette. "
-                 "Needs statsbadge[images]"},
+         "hint": "One picture per post, cropped and drawn in the theme's palette"},
     )
 
     @classmethod
@@ -186,7 +185,7 @@ class Mastodon(Source):
         wanted = str(self.config.get("images") or "small")
         # Off where the extra is not installed, rather than a fault on every fetch: a host
         # with no decoder should show the words and say nothing about it.
-        self.preset = PRESETS.get(wanted) if imaging.available() else None
+        self.preset = PRESETS.get(wanted)
         # One group, and slow: a timeline fetched every two minutes has no business in a
         # frame the badge collects every second.
         self.groups = {GROUP: {"label": "Mastodon", "slow": True, "fields": dict(FIELDS)}}

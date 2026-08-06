@@ -2,9 +2,7 @@
 
 Your Mastodon timeline and account, for [statsbadge](https://github.com/pimoroni/statsbadge).
 
-The newest post in your feed, the newest mention, the newest notification of any kind and your own last post, alongside your followers, following, posts and unread count. Add a **Notifications** page and put any mixture of them on it: the messages stack down the page and the counters go in a strip along the bottom.
-
-No page of its own and nothing to install on the badge - the app's own Notifications page draws all of it.
+The newest post in your feed, the newest mention, the newest notification of any kind and your last post, alongside your followers, following, posts and unread count. Add a **Notifications** page and put any mixture of them on it: the messages stack down the page and the counters go in a strip along the bottom.
 
 ## Install
 
@@ -32,14 +30,6 @@ Paste that and your instance's host - `fosstodon.org`, no `https://` - into the 
 ## Pictures
 
 One picture per post, where the post has one: the first attachment, cropped to what is actually in it and drawn in the theme's own greys.
-
-Needs the images extra, which brings in Pillow to do the decoding:
-
-```bash
-statsbadge ext add "statsbadge[images]"
-```
-
-Without it the setting has no effect and posts show their words, which is most of a post anyway.
 
 `small` is 64x48 in four shades and adds about 950 bytes to a message; `large` is 128x96 in eight and adds about 4KB. Those only travel when the post changes, so a page of four messages costs that once rather than every second - but four large pictures is 16KB in one go, and `small` is the one to leave it on.
 
