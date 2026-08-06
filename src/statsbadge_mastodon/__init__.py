@@ -109,9 +109,8 @@ class Mastodon(Source):
          "hint": "Preferences, Development, New application. `read` is all it needs, and "
                  "the token is shown once the application is made"},
         {"key": "every", "label": "Ask every", "type": "number",
-         "default": int(DEFAULT_EVERY),
-         "hint": "Seconds. A timeline is not a sensor, and the default is a fortieth of "
-                 "what the API allows"},
+         "default": int(DEFAULT_EVERY), "unit": "seconds",
+         "min": int(MIN_EVERY), "max": int(MAX_EVERY), "step": 30},
         {"key": "images", "label": "Pictures", "type": "choice",
          "options": ["off", "small", "large"], "default": "small",
          "hint": "One picture per post, cropped to what is in it and drawn in the theme's "
