@@ -113,8 +113,8 @@ class Mastodon(Source):
          "min": int(MIN_EVERY), "max": int(MAX_EVERY), "step": 30},
         {"key": "images", "label": "Pictures", "type": "choice",
          "options": ["off", "small", "large"], "default": "small",
-         "hint": "One picture per post, cropped to what is in it and drawn in the theme's "
-                 "own greys. Needs statsbadge[images]"},
+         "hint": "One picture per post, cropped and drawn in the theme's palette. "
+                 "Needs statsbadge[images]"},
     )
 
     @classmethod
