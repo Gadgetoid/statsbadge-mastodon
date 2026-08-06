@@ -55,6 +55,11 @@ HISTORY_MS = int(HISTORY_EVERY * 1000)
 COUNTS = "counts"
 WHO = "who"
 
+# What this says when it has not been given an account. Not counted as faults - an extension
+# nobody has configured is not broken - but worth showing, since a silent source that reports
+# nothing looks the same as one that is not installed.
+UNSET = ("no instance and token set", "no instance set", "no access token set")
+
 # Which preset a setting asks for. Landscape either way: the page puts a picture down the
 # left of the words, and a tall one beside two lines of text is a column of nothing.
 PRESETS = {"small": "low", "large": "high"}
@@ -162,6 +167,11 @@ class Mastodon(Source):
         """Take settings while running, and ask again rather than waiting out the interval."""
         super().configure(settings)
         self._read_settings()
+        if self.last_fault in UNSET and self.domain and self.token:
+            # That message was about the settings, and they have just been given. Waiting
+            # for a fetch to succeed before withdrawing it leaves the config page saying a
+            # token is missing for as long as the first four requests take.
+            self.last_fault = None
         self._next = 0.0
         self._wake.set()
 
@@ -233,8 +243,8 @@ class Mastodon(Source):
         if not self.domain or not self.token:
             # Not a fault: an extension nobody has given an account to is unconfigured, and
             # counting that would report a broken source on every host that installed it.
-            self.last_fault = "no instance and token set" if not (self.domain or self.token) \
-                else ("no instance set" if not self.domain else "no access token set")
+            self.last_fault = (UNSET[0] if not (self.domain or self.token)
+                               else UNSET[1] if not self.domain else UNSET[2])
             return
         if time.monotonic() < self._next:
             return
