@@ -10,13 +10,13 @@ The newest post in your feed, the newest mention, the newest notification of any
 statsbadge ext add mastodon
 ```
 
-Then, in the config UI under **Extensions**, set your instance and paste an access token.
+Then, in the config UI under **Extensions**, set your instance and paste your access token.
 
 ## The token
 
 In Mastodon: **Preferences → Development → New application**. Give it a name, leave the scopes at `read` (that is all this asks for), and save. The application's page then shows **Your access token**.
 
-Paste that and your instance's host - `fosstodon.org`, no `https://` - into the settings. The token is stored in the host's config file in plain text, like every other extension setting, and the config page keeps it masked behind **Edit secrets**.
+Paste that and your instance's host - `fosstodon.org`, no `https://` - into the settings. The token is stored in the host's config file in plain text. The config page keeps it masked behind **Edit secrets**.
 
 ## Settings
 
@@ -29,11 +29,9 @@ Paste that and your instance's host - `fosstodon.org`, no `https://` - into the 
 
 ## Pictures
 
-One picture per post, where the post has one: the first attachment, cropped to what is actually in it and drawn in the theme's own greys.
+One picture per post, where the post has one: the first attachment, cropped to what is actually in it and drawn in the theme's palette.
 
-`small` is 64x48 in four shades and adds about 950 bytes to a message; `large` is 128x96 in eight and adds about 4KB. Those only travel when the post changes, so a page of four messages costs that once rather than every second - but four large pictures is 16KB in one go, and `small` is the one to leave it on.
-
-What is sent is a position on a ramp rather than a colour, and the badge draws it in whichever theme it is on. Change the theme and the picture changes with it.
+`small` is 64x48 in four shades and adds about 950 bytes to a message; `large` is 128x96 in eight and adds about 4KB. Four subsequent posts with images might cause animation hiccups so choose carefully.
 
 ## What it reports
 
@@ -57,14 +55,14 @@ The rest are numbers, and go anywhere a number goes:
 | Likes on your latest | |
 | Boosts on your latest | |
 
-Followers and following are kept **hourly**, so a graph of either shows a week rather than the last ninety seconds. Mastodon reports no history of its own, so that ring is built here as the host runs: it is empty on a first launch and fills an hour at a time.
+Followers and following are kept **hourly**, so a graph of either shows a week rather than the last ninety seconds. Mastodon reports no history of its own, so that ring is built as the host runs: it is empty on a first launch and fills an hour at a time.
 
 ## Notes
 
-Four requests a refresh, against a limit of 300 in five minutes, so the default of two minutes is a fortieth of what is allowed.
+Four requests a refresh, against a limit of 300 in five minutes, so the default of two minutes is 1/40th of the API limit.
 
-A boost carries no text of its own - the content is on the post inside it - so what is drawn is the original with "boosted by" beside it. Getting that wrong is a page of blank messages, which is how the API says a post is a boost.
+A boost includes no content of its own - the content is on the post inside it - so the original post is drawn with "boosted by" beside it.
 
-Post bodies arrive as HTML. Tags go, entities are decoded, and paragraph and line breaks become spaces rather than being dropped, or two sentences run together into one word. They are cut to 160 characters here, which is more than the two or three lines a page draws.
+Post bodies arrive as HTML. Tags go, entities are decoded, and paragraph and line breaks become spaces rather than being dropped. They are cut to 160 characters on the server, comfortably more than the two or three lines a page draws.
 
-These readings change every couple of minutes and the badge polls every second, so they are declared slow: the host sends them when they change and the badge holds on to them in between.
+Mastodon "readings" change every couple of minutes and the badge polls every second, so they are declared slow: the host sends them when they change and the badge holds on to them.
