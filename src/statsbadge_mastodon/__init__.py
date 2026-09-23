@@ -18,16 +18,13 @@ none of this is Mastodon-specific by the time it reaches the badge.
 import base64
 import datetime
 import html
-import json
 import re
 import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 
 from statsbadge import imaging
-from statsbadge.sources.base import Source
+from statsbadge.sources import web
+from statsbadge.sources.base import PollingSource
 
 # How often the instance is asked, unless the setting says otherwise. A timeline is not a
 # sensor: two minutes is well inside what anyone would notice and a fortieth of the limit.
@@ -35,7 +32,6 @@ DEFAULT_EVERY = 120.0
 MIN_EVERY = 30.0
 MAX_EVERY = 3600.0
 RETRY_AFTER = 60.0
-FETCH_POLL = 1.0
 
 # How many notifications to read to find the newest of each sort. One request rather than one
 # per type, and twenty is far enough back to hold a mention on a quiet account.
@@ -98,7 +94,7 @@ FIELDS = {
 GROUP = "mastodon"
 
 
-class Mastodon(Source):
+class Mastodon(PollingSource):
     name = "mastodon"
     label = "Mastodon"
 
@@ -131,9 +127,6 @@ class Mastodon(Source):
         self._lock = threading.Lock()
         self._next = 0.0
         self._next_history = 0.0
-        self._fetcher = None
-        self._wake = threading.Event()
-        self._stop = threading.Event()
         self._read_settings()
 
     # -- lifecycle ----------------------------------------------------------
@@ -148,44 +141,23 @@ class Mastodon(Source):
         with self._lock:
             self._counts = {name: list(points) for name, points in kept.items()
                             if isinstance(points, list)}
-        if self._fetcher is None:
-            self._stop.clear()
-            self._fetcher = threading.Thread(target=self._fetch_loop, daemon=True,
-                                             name="statsbadge-mastodon")
-            self._fetcher.start()
-
-    def stop(self):
-        self._stop.set()
-        self._wake.set()
-        if self._fetcher is not None:
-            self._fetcher.join(timeout=2.0)
-            self._fetcher = None
+        super().start()
 
     def configure(self, settings):
         """Take settings while running, and ask again rather than waiting out the interval."""
         super().configure(settings)
         self._read_settings()
-        if self.last_fault in UNSET and self.domain and self.token:
-            # That message was about the settings, and they have just been given. Waiting
-            # for a fetch to succeed before withdrawing it leaves the config page saying a
-            # token is missing for as long as the first four requests take.
-            self.last_fault = None
+        if self.domain and self.token:
+            self.note_ok("setup")
         self._next = 0.0
-        self._wake.set()
+        self.wake()
 
     def _read_settings(self):
         self.domain = str(self.config.get("domain") or "").strip()
         self.domain = self.domain.replace("https://", "").replace("http://", "").strip("/")
         self.token = str(self.config.get("access_token") or "").strip()
-        try:
-            every = float(self.config.get("every") or DEFAULT_EVERY)
-        except (TypeError, ValueError):
-            every = DEFAULT_EVERY
-        self.every = max(MIN_EVERY, min(MAX_EVERY, every))
-        wanted = str(self.config.get("images") or "small")
-        # Off where the extra is not installed, rather than a fault on every fetch: a host
-        # with no decoder should show the words and say nothing about it.
-        self.preset = PRESETS.get(wanted)
+        self.every = float(self.config["every"])
+        self.preset = PRESETS.get(self.config["images"])
         # One group, and slow: a timeline fetched every two minutes has no business in a
         # frame the badge collects every second.
         self.groups = {GROUP: {"label": "Mastodon", "slow": True, "fields": dict(FIELDS)}}
@@ -216,33 +188,14 @@ class Mastodon(Source):
                                     "age_ms": age_ms}
                 for name, points in counts.items() if points}
 
-    def note_fault(self, exc):
-        """What the instance said, without a type name in front of it."""
-        if isinstance(exc, MastodonError):
-            self.faults += 1
-            self.last_fault = str(exc)
-            return
-        super().note_fault(exc)
-
     # -- fetching -----------------------------------------------------------
 
-    def _fetch_loop(self):
-        while not self._stop.is_set():
-            try:
-                self._refresh()
-            except Exception as exc:
-                # The fetcher must not die, or the timeline would stand at whatever it last
-                # was with nothing ever replacing it.
-                self.note_fault(exc)
-            self._wake.wait(FETCH_POLL)
-            self._wake.clear()
-
-    def _refresh(self):
+    def poll(self):
         if not self.domain or not self.token:
             # Not a fault: an extension nobody has given an account to is unconfigured, and
             # counting that would report a broken source on every host that installed it.
-            self.last_fault = (UNSET[0] if not (self.domain or self.token)
-                               else UNSET[1] if not self.domain else UNSET[2])
+            self.note_waiting(UNSET[0] if not (self.domain or self.token)
+                              else UNSET[1] if not self.domain else UNSET[2], key="setup")
             return
         if time.monotonic() < self._next:
             return
@@ -317,10 +270,8 @@ class Mastodon(Source):
             url = media.get("preview_url") or media.get("url")
             made = None
             try:
-                with urllib.request.urlopen(url, timeout=15) as response:
-                    raw = response.read()
-                made = base64.b64encode(
-                    imaging.thumbnail(raw, self.preset, "landscape")).decode("ascii")
+                made = base64.b64encode(imaging.thumbnail(
+                    web.fetch_bytes(url), self.preset, "landscape")).decode("ascii")
             except Exception:
                 made = None
             if len(self._images) >= IMAGE_CACHE:
@@ -357,27 +308,10 @@ class Mastodon(Source):
     # -- talking to it ------------------------------------------------------
 
     def _get(self, path):
-        request = urllib.request.Request(
-            f"https://{self.domain}/api/v1{path}",
-            headers={"Authorization": f"Bearer {self.token}",
-                     "Accept": "application/json"})
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            # The status alone says nothing useful: a token missing a scope and a token that
-            # has been revoked are both 401, and the body says which.
-            detail = ""
-            try:
-                detail = (json.loads(exc.read().decode("utf-8")) or {}).get("error") or ""
-            except Exception:
-                detail = ""
-            raise MastodonError(f"HTTP {exc.code}"
-                                + (f": {detail}" if detail else "")) from exc
-
-
-class MastodonError(Exception):
-    """What the instance said was wrong, as one line for the config UI to show."""
+        # The status alone says nothing useful: a token missing a scope and a token that has
+        # been revoked are both 401, and the body says which.
+        return web.fetch_json(f"https://{self.domain}/api/v1{path}",
+                              headers={"Authorization": f"Bearer {self.token}"})
 
 
 # -- turning a post into a message ------------------------------------------
